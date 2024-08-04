@@ -1,3 +1,3 @@
 # Neural Weight Synthesis (NWS)
 
-This project implements a novel approach to improve LLM model performance using a diffusion model for weight generation. 
+This project proposes a novel methodology to improve the training process of large language models (LLMs) through the application of a diffusion model for generating LLM weights.

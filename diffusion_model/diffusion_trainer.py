@@ -1,27 +1,39 @@
 import torch
 from tqdm import tqdm
+import torch.nn.functional as F
 from diffusion_model.diffusion_model import DiffusionModel
 from diffusion_model.weight_dataset import WeightDataset
+
 
 class DiffusionTrainer:
     def __init__(self, config, device):
         self.config = config
         self.device = device
         self.model = DiffusionModel(config).to(device)
-        self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=config.learning_rate)
+        self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=config.diffusion_learning_rate)
         self.dataset = WeightDataset(config)
         self.dataloader = torch.utils.data.DataLoader(
             self.dataset,
-            batch_size=config.batch_size,
+            batch_size=config.diffusion_batch_size,
             shuffle=True,
             num_workers=config.num_workers,
         )
 
     def train(self):
-        for epoch in range(self.config.num_epochs):
+        for epoch in range(self.config.diffusion_num_epochs):
             pbar = tqdm(enumerate(self.dataloader), total=len(self.dataloader))
             for it, (x0, _) in pbar:
                 x0 = x0.to(self.device)
+                
+                # Ensure x0 has the correct shape
+                if x0.dim() == 2:
+                    x0 = x0.unsqueeze(1)  # Add channel dimension
+                
+                # Limit the sequence length to prevent memory issues
+                max_seq_length = 10000  # You can adjust this value
+                if x0.shape[2] > max_seq_length:
+                    start_idx = torch.randint(0, x0.shape[2] - max_seq_length, (1,)).item()
+                    x0 = x0[:, :, start_idx:start_idx + max_seq_length]
                 
                 # Sample t uniformly
                 t = torch.randint(0, self.config.num_timesteps, (x0.shape[0],), device=self.device)
@@ -33,6 +45,9 @@ class DiffusionTrainer:
                 
                 # Predict the noise
                 predicted_noise = self.model(xt, t)
+                
+                # Ensure predicted_noise has the same shape as noise
+                predicted_noise = predicted_noise[:, :noise.shape[1], :]
                 
                 # Compute loss
                 loss = F.mse_loss(predicted_noise, noise)
@@ -46,12 +61,12 @@ class DiffusionTrainer:
                 pbar.set_description(f"epoch {epoch+1} iter {it}: train loss {loss.item():.5f}")
             
             # Save checkpoint
-            if (epoch + 1) % self.config.save_interval == 0:
+            if hasattr(self.config, 'save_interval') and (epoch + 1) % self.config.save_interval == 0:
                 self.save_checkpoint(epoch + 1)
 
     def get_alphas_cumprod(self, t):
         """Get the cumulative product of alphas for the given timesteps."""
-        return torch.tensor([self.config.alphas_cumprod[t] for t in t], device=self.device)
+        return torch.tensor([self.config.alphas_cumprod[t] for t in t], device=self.device, dtype=torch.float32)
 
     def q_sample(self, x0, t, noise, alphas_cumprod):
         """Sample from q(x_t | x_0)."""

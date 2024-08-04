@@ -1,3 +1,4 @@
+from evaluation import evaluator
 import torch
 from gpt2_training.gpt2_model import GPT2Model
 from gpt2_training.gpt2_trainer import GPT2Trainer
@@ -10,6 +11,7 @@ from utils.config_manager import ConfigManager
 from utils.logger import Logger
 from utils.visualization import Visualizer
 from types import SimpleNamespace
+import numpy as np
 
 def main():
     # Load configuration
@@ -25,17 +27,21 @@ def main():
         # Diffusion Model Configuration
         diffusion_channels=[32, 64, 128, 256], # Channels for diffusion model
         diffusion_time_embed_dim=256,          # Time embedding dimension for diffusion
-        diffusion_num_timesteps=1000,          # Number of timesteps in diffusion
+        num_timesteps=1000,          # Number of timesteps in diffusion
 
         # Training Configuration
         batch_size=4,       # Batch size for GPT-2
         learning_rate=3e-5,  # Learning rate for GPT-2
         num_workers=4,       # Number of workers
         num_epochs=10,       # Number of epochs for GPT-2 training
+        beta_start=0.0001,
+        beta_end=0.02,
 
+        channels=[32, 64, 128, 256], 
         diffusion_batch_size=64,  # Batch size for diffusion model
         diffusion_learning_rate=1e-4, # Learning rate for diffusion model
         diffusion_num_epochs=50,  # Number of epochs for diffusion training
+        diffusion_num_timesteps=1000, # Number of timesteps in diffusion
         num_weight_updates=5,     # Number of weight updates
 
         # Data Configuration
@@ -62,6 +68,18 @@ def main():
         checkpoint_interval=1000, # Interval for checkpoint saving
         checkpoint_dir='checkpoints/' # Directory for checkpoints
     )
+    betas = np.linspace(config.beta_start, config.beta_end, config.diffusion_num_timesteps)
+    alphas = 1. - betas
+    alphas_cumprod = np.cumprod(alphas, axis=0)
+    # Calculate betas, alphas, and alphas_cumprod
+    config.betas = np.linspace(config.beta_start, config.beta_end, config.diffusion_num_timesteps, dtype=np.float32)
+    config.alphas = 1. - config.betas
+    config.alphas_cumprod = np.cumprod(config.alphas, axis=0)
+
+    # Ensure these are float32
+    config.betas = config.betas.astype(np.float32)
+    config.alphas = config.alphas.astype(np.float32)
+    config.alphas_cumprod = config.alphas_cumprod.astype(np.float32)
 
     # Validate the configuration
     validate_config(config)
